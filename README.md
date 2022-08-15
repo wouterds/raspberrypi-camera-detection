@@ -14,5 +14,7 @@ https://qengineering.eu/install-opencv-lite-on-raspberry-pi.html
 ## Running
 
 ```bash
-python server.py
+./server
 ```
+
+You should now see the streams on `http://raspberrypi:3000`
