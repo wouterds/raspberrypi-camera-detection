@@ -12,6 +12,7 @@ class ImageProcessing():
     self._camera = camera
     self._color_frame = None
     self._gray_frame = None
+    self._thresholded_frame = None;
 
   def start(self):
     self._thread.start()
@@ -21,6 +22,9 @@ class ImageProcessing():
 
   def getLastGrayFrame(self):
     return self._gray_frame
+
+  def getLastThresholdedFrame(self):
+    return self._thresholded_frame
 
   def _run(self):
     while True:
@@ -34,6 +38,10 @@ class ImageProcessing():
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     self._gray_frame = gray
+
+    success, thresholded = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+    if success:
+      self._thresholded_frame = thresholded
 
 class WebServer(object):
   def __init__(self, imageProcessing):
@@ -68,6 +76,11 @@ class WebServer(object):
   def stream_gray(self):
     return self.create_stream(lambda: self._imageProcessing.getLastGrayFrame())
   stream_gray._cp_config = { 'response.stream': True }
+
+  @cherrypy.expose
+  def stream_thresholded(self):
+    return self.create_stream(lambda: self._imageProcessing.getLastThresholdedFrame())
+  stream_thresholded._cp_config = { 'response.stream': True }
 
 if __name__ == '__main__':
   camera = cv2.VideoCapture('/dev/video0')
