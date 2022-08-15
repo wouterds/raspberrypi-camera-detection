@@ -2,33 +2,92 @@
 
 import cherrypy
 import cv2
-import base64
 import os
+from time import sleep
+from threading import Thread
+
+class ImageProcessing():
+  def __init__(self, camera):
+    self._thread = Thread(target=self._run)
+    self._camera = camera
+    self._color_frame = None
+    self._gray_frame = None
+
+  def start(self):
+    self._thread.start()
+
+  def getLastColorFrame(self):
+    return self._color_frame
+
+  def getLastGrayFrame(self):
+    return self._gray_frame
+
+  def _run(self):
+    while True:
+      success, frame = camera.read()
+      if success:
+        self._process(frame)
+      sleep(.1)
+
+  def _process(self, frame):
+    self._color_frame = frame
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    self._gray_frame = gray
 
 class WebServer(object):
-  def __init__(self):
-    self.camera = cv2.VideoCapture(0)
+  def __init__(self, imageProcessing):
+    self._imageProcessing = imageProcessing
 
   @cherrypy.expose
   def index(self):
-    _, image = self.camera.read()
-    _, data = cv2.imencode('.jpg', image)
-
-    open('./static/image.jpg', 'wb').write(data)
     return open('./static/index.html')
 
-path   = os.path.abspath(os.path.dirname(__file__))
-config={
-  'global': {
-    'server.socket_host': '0.0.0.0',
-    'server.socket_port': 3000,
-  },
-  '/static': {
-    'tools.staticdir.on': True,
-    'tools.staticdir.dir': os.path.join(path, 'static'),
-  }
-}
+  def create_stream(self, image_cb):
+    cherrypy.response.headers['Content-Type'] = 'multipart/x-mixed-replace; boundary=frame'
+    def stream():
+      while True:
+        data = cv2.imencode('.jpg', image_cb())[1].tobytes()
+        length = str(len(data)).encode()
+        yield(
+          b'--frame\r\n'
+          b'Content-Type: image/jpeg\r\n'
+          b'Content-Length: ' + length + b'\r\n'
+          b'\r\n' + data + b'\r\n\r\n'
+        )
+        sleep(.1)
+
+    return stream()
+
+  @cherrypy.expose
+  def stream_color(self):
+    return self.create_stream(lambda: self._imageProcessing.getLastColorFrame())
+  stream_color._cp_config = { 'response.stream': True }
+
+  @cherrypy.expose
+  def stream_gray(self):
+    return self.create_stream(lambda: self._imageProcessing.getLastGrayFrame())
+  stream_gray._cp_config = { 'response.stream': True }
 
 if __name__ == '__main__':
-  cherrypy.quickstart(WebServer(), '/', config)
+  camera = cv2.VideoCapture('/dev/video0')
+  path = os.path.abspath(os.path.dirname(__file__))
+  config = {
+    'global': {
+      'server.socket_host': '0.0.0.0',
+      'server.socket_port': 3000,
+    },
+    '/static': {
+      'tools.staticdir.on': True,
+      'tools.staticdir.dir': os.path.join(path, 'static'),
+    }
+  }
 
+  try:
+    imageProcessing = ImageProcessing(camera)
+    webServer = WebServer(imageProcessing)
+    imageProcessing.start()
+    cherrypy.quickstart(webServer, '/', config)
+
+  finally:
+    camera.release()
