@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+
+import cherrypy
+import cv2
+import base64
+import os
+
+class WebServer(object):
+  def __init__(self):
+    self.camera = cv2.VideoCapture(0)
+
+  @cherrypy.expose
+  def index(self):
+    _, image = self.camera.read()
+    _, data = cv2.imencode('.jpg', image)
+
+    open('./static/image.jpg', 'wb').write(data)
+    return open('./static/index.html')
+
+path   = os.path.abspath(os.path.dirname(__file__))
+config={
+  'global': {
+    'server.socket_host': '0.0.0.0',
+    'server.socket_port': 3000,
+  },
+  '/static': {
+    'tools.staticdir.on': True,
+    'tools.staticdir.dir': os.path.join(path, 'static'),
+  }
+}
+
+if __name__ == '__main__':
+  cherrypy.quickstart(WebServer(), '/', config)
+
